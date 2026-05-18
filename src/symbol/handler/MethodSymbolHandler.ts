@@ -92,50 +92,31 @@ export class MethodSymbolHandler implements SymbolHandleable {
   }
 
   private getMethodCharPosition(document: vscode.TextDocument, range: vscode.Range): vscode.Position {
-    let isFoundParenthesis = false;
-    let isNowInsideTheComment = false;
-    let weight = 0;
+    // Go method signature: "func (recv Type) MethodName(" — find the name after the receiver closing paren
+    const firstLine = document.lineAt(range.start.line).text;
+    // Fast path: single-line receiver "(recv) Name("
+    const match = firstLine.match(/^func\s*\([^)]*\)\s*(\w)/);
+    if (match && match.index !== undefined) {
+      const nameStart = firstLine.indexOf(match[1], match.index + match[0].length - 1);
+      return new vscode.Position(range.start.line, nameStart);
+    }
 
-    for (let lineNumber = range.start.line; lineNumber < range.end.line; lineNumber++) {
-      const currentLineCharacters = document.lineAt(lineNumber).text;
-      const characterCount = currentLineCharacters.length;
-
-      for (let currentCharacterIndex = 0; currentCharacterIndex < characterCount; currentCharacterIndex++) {
-        const currentCharacter = currentLineCharacters[currentCharacterIndex];
-        const nextCharacter = currentLineCharacters[currentCharacterIndex + 1];
-
-        if (currentCharacter === ' ') {
-          continue;
-        }
-
-        if (isNowInsideTheComment) {
-          if (currentCharacter === '*' && nextCharacter === '/') {
-            isNowInsideTheComment = false;
+    // Multi-line receiver: scan until receiver paren closes, then find name
+    let depth = 0;
+    let foundOpen = false;
+    for (let ln = range.start.line; ln <= Math.min(range.start.line + 10, range.end.line); ln++) {
+      const text = document.lineAt(ln).text;
+      for (let ci = 0; ci < text.length; ci++) {
+        const ch = text[ci];
+        if (ch === '(') { depth++; foundOpen = true; }
+        else if (ch === ')') {
+          depth--;
+          if (foundOpen && depth === 0) {
+            // name starts after whitespace following this ')'
+            let ni = ci + 1;
+            while (ni < text.length && text[ni] === ' ') ni++;
+            if (ni < text.length) return new vscode.Position(ln, ni);
           }
-
-          continue;
-        }
-
-        // now not in the inside
-
-        if (currentCharacter === '/' && nextCharacter === '*') {
-          isNowInsideTheComment = true;
-          continue;
-        }
-
-        if (currentCharacter === '(') {
-          weight++;
-          isFoundParenthesis = true;
-          continue;
-        }
-
-        if (currentCharacter === ')') {
-          weight--;
-          continue;
-        }
-
-        if (isFoundParenthesis && weight === 0 && currentCharacter !== '*' && currentCharacter !== '/') {
-          return new vscode.Position(lineNumber, currentCharacterIndex);
         }
       }
     }
