@@ -5,10 +5,10 @@ type executeDocumentSymbolProviderResponse = (vscode.SymbolInformation & vscode.
 export class VsCodeWrapper {
   private readonly inFlight = new Map<string, Promise<unknown>>();
 
-  private dedupe<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  private dedupe<T>(key: string, fn: () => Thenable<T>): Promise<T> {
     const existing = this.inFlight.get(key);
     if (existing) return existing as Promise<T>;
-    const p = fn().finally(() => this.inFlight.delete(key));
+    const p = Promise.resolve(fn()).finally(() => this.inFlight.delete(key));
     this.inFlight.set(key, p);
     return p;
   }
